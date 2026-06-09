@@ -20,7 +20,9 @@
 # production
 /build
 
+# secrets — never commit
 *-firebase-adminsdk-*.json
+comicbookreader-bcddb-firebase-adminsdk-fbsvc-279807e631.json
 comicbookreader-*.json
 *.pem
 
