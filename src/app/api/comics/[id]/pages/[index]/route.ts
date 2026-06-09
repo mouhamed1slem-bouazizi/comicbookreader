@@ -7,6 +7,8 @@ import {
 } from "@/lib/comics/comicService";
 import { extractComicPage } from "@/lib/comics/extractPage";
 
+export const maxDuration = 300;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; index: string }> }
@@ -24,7 +26,7 @@ export async function GET(
       return NextResponse.json({ error: "Comic not found" }, { status: 404 });
     }
 
-    const buffer = await getComicBuffer(id, undefined, meta);
+    const buffer = await getComicBuffer(id, undefined, meta, uid ?? undefined);
     if (!buffer) {
       return NextResponse.json(
         { error: "Could not load comic from Terabox. Reconnect in Settings with fresh credentials." },
@@ -33,7 +35,7 @@ export async function GET(
     }
 
     if (meta.totalPages === 0) {
-      await ensureComicPageCount(meta);
+      await ensureComicPageCount(meta, uid ?? undefined);
     }
 
     const page = await extractComicPage(buffer, meta.format, pageIndex);

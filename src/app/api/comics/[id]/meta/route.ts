@@ -15,7 +15,7 @@ export async function GET(
     }
 
     if (comic.totalPages === 0) {
-      comic.totalPages = await ensureComicPageCount(comic);
+      comic.totalPages = await ensureComicPageCount(comic, uid ?? undefined);
     }
 
     return NextResponse.json(comic);

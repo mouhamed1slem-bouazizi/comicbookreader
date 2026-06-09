@@ -169,6 +169,7 @@ export function ComicReader({
   }, [comicId, resolvedTotalPages, getIdToken]);
 
   const translationEnabled =
+    Boolean(pageUrl) &&
     settings.translationEnabled &&
     showTranslation &&
     (!settings.wifiOnlyTranslation ||
@@ -197,7 +198,7 @@ export function ComicReader({
           pageIndex: index,
           totalPages: effectiveTotalPages > 0 ? effectiveTotalPages : Math.max(index + 1, 1),
           sourceRef,
-          coverUrl,
+          ...(coverUrl ? { coverUrl } : {}),
         });
       } catch (err) {
         console.error("Failed to save reading progress:", err);
@@ -220,13 +221,17 @@ export function ComicReader({
 
   const handleComplete = async () => {
     if (!user) return;
-    await markCompleted(user.uid, {
-      comicId,
-      title,
-      lastPageIndex: pageIndex,
-      sourceRef,
-      coverUrl,
-    });
+    try {
+      await markCompleted(user.uid, {
+        comicId,
+        title,
+        lastPageIndex: pageIndex,
+        sourceRef,
+        ...(coverUrl ? { coverUrl } : {}),
+      });
+    } catch (err) {
+      console.error("Failed to mark comic completed:", err);
+    }
   };
 
   useEffect(() => {

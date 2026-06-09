@@ -37,6 +37,9 @@ interface TeraboxApiResponse {
 
 const TERABOX_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TeraboxApp = any;
+
 function extractTeraboxDownloadLink(data: TeraboxApiResponse): string | null {
   for (const item of data.info ?? []) {
     if (item.dlink) return item.dlink;
@@ -56,71 +59,119 @@ function extractTeraboxDownloadLink(data: TeraboxApiResponse): string | null {
   return null;
 }
 
+function appendTeraboxAuthParams(url: URL, app: TeraboxApp): void {
+  url.searchParams.set("app_id", String(app.params.app?.app_id ?? 250528));
+  url.searchParams.set("web", "1");
+  url.searchParams.set("channel", "dubox");
+  url.searchParams.set("clienttype", "0");
+  if (app.data.jsToken) {
+    url.searchParams.set("jsToken", app.data.jsToken);
+  }
+}
+
+function normalizeTeraboxDlink(link: string): string {
+  if (link.includes("origin=dlna")) return link;
+  return link.includes("?") ? `${link}&origin=dlna` : `${link}?origin=dlna`;
+}
+
+async function handleTeraboxResponse(
+  app: TeraboxApp,
+  res: Response,
+  path: string,
+  attempt: number
+): Promise<TeraboxApiResponse | "retry"> {
+  const regionPrefix =
+    res.headers.get("region-domain-prefix") ??
+    res.headers.get("url-domain-prefix");
+  if (regionPrefix) {
+    app.params.whost = `https://${regionPrefix}.terabox.com`;
+    return "retry";
+  }
+
+  if (res.status >= 300 && res.status < 400) {
+    const location = res.headers.get("location");
+    if (location) {
+      const resolved = new URL(location, app.params.whost);
+      if (resolved.origin !== app.params.whost) {
+        app.params.whost = resolved.origin;
+        return "retry";
+      }
+    }
+  }
+
+  if (!res.ok) {
+    console.error(`Terabox HTTP ${res.status} for ${path}`);
+    return { errno: res.status, errmsg: `HTTP ${res.status}` };
+  }
+
+  const data = (await res.json()) as TeraboxApiResponse;
+  if (data.errno === -6 && attempt < 2) return "retry";
+  return data;
+}
+
+async function teraboxGet(
+  app: TeraboxApp,
+  path: string,
+  params: Record<string, string>
+): Promise<TeraboxApiResponse> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const url = new URL(app.params.whost + path);
+    appendTeraboxAuthParams(url, app);
+    for (const [key, value] of Object.entries(params)) {
+      url.searchParams.set(key, value);
+    }
+
+    const res = await fetch(url.toString(), {
+      method: "GET",
+      headers: {
+        "User-Agent": app.params.ua,
+        Cookie: app.params.cookie,
+        Accept: "application/json, text/plain, */*",
+      },
+      redirect: "manual",
+      signal: AbortSignal.timeout(app.TERABOX_TIMEOUT ?? 120000),
+    });
+
+    const outcome = await handleTeraboxResponse(app, res, path, attempt);
+    if (outcome === "retry") continue;
+    return outcome;
+  }
+
+  return { errno: -1, errmsg: "Terabox GET request failed after retries" };
+}
+
 async function teraboxPostForm(
   app: TeraboxApp,
   path: string,
   fields: Record<string, string | number>
 ): Promise<TeraboxApiResponse> {
-  const buildUrl = () => {
-    const url = new URL(app.params.whost + path);
-    if (app.data.jsToken) {
-      url.searchParams.set("app_id", String(app.params.app?.app_id ?? 250528));
-      url.searchParams.set("web", "1");
-      url.searchParams.set("channel", "dubox");
-      url.searchParams.set("clienttype", "0");
-      url.searchParams.set("jsToken", app.data.jsToken);
-    }
-    return url;
-  };
-
   const body = new URLSearchParams(
     Object.entries(fields).map(([key, value]) => [key, String(value)])
   ).toString();
 
   for (let attempt = 0; attempt < 3; attempt++) {
-    const url = buildUrl();
+    const url = new URL(app.params.whost + path);
+    appendTeraboxAuthParams(url, app);
+
     const res = await fetch(url.toString(), {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         "User-Agent": app.params.ua,
         Cookie: app.params.cookie,
+        Accept: "application/json, text/plain, */*",
       },
       body,
       redirect: "manual",
       signal: AbortSignal.timeout(app.TERABOX_TIMEOUT ?? 120000),
     });
 
-    const regionPrefix =
-      res.headers.get("region-domain-prefix") ??
-      res.headers.get("url-domain-prefix");
-    if (regionPrefix) {
-      app.params.whost = `https://${regionPrefix}.terabox.com`;
-      continue;
-    }
-
-    if (res.status >= 300 && res.status < 400) {
-      const location = res.headers.get("location");
-      if (location) {
-        const resolved = new URL(location, app.params.whost);
-        if (resolved.origin !== app.params.whost) {
-          app.params.whost = resolved.origin;
-          continue;
-        }
-      }
-    }
-
-    if (!res.ok) {
-      console.error(`Terabox HTTP ${res.status} for ${path}`);
-      return { errno: res.status, errmsg: `HTTP ${res.status}` };
-    }
-
-    const data = (await res.json()) as TeraboxApiResponse;
-    if (data.errno === -6 && attempt < 2) continue;
-    return data;
+    const outcome = await handleTeraboxResponse(app, res, path, attempt);
+    if (outcome === "retry") continue;
+    return outcome;
   }
 
-  return { errno: -1, errmsg: "Terabox request failed after retries" };
+  return { errno: -1, errmsg: "Terabox POST request failed after retries" };
 }
 
 async function getTeraboxHomeSign(
@@ -182,16 +233,21 @@ async function resolveTeraboxDlink(
       JSON.stringify([remotePath]),
       JSON.stringify([{ fs_id: Number(fsId), path: remotePath }]),
     ]) {
-      const meta = await teraboxPostForm(app, "/api/filemetas", {
-        dlink: 1,
-        origin: "dlna",
-        target,
-      });
-      if (meta.errno === 0) {
-        const link = extractTeraboxDownloadLink(meta);
-        if (link) return link;
-      } else {
-        console.error("Terabox filemetas errno:", meta.errno, meta.errmsg, "path:", remotePath);
+      const filemetaParams = { target, dlink: "1", origin: "dlna" };
+      for (const meta of [
+        await teraboxGet(app, "/api/filemetas", filemetaParams),
+        await teraboxPostForm(app, "/api/filemetas", {
+          dlink: 1,
+          origin: "dlna",
+          target,
+        }),
+      ]) {
+        if (meta.errno === 0) {
+          const link = extractTeraboxDownloadLink(meta);
+          if (link) return normalizeTeraboxDlink(link);
+        } else {
+          console.error("Terabox filemetas errno:", meta.errno, meta.errmsg, "path:", remotePath);
+        }
       }
     }
   }
@@ -199,19 +255,31 @@ async function resolveTeraboxDlink(
   const home = await getTeraboxHomeSign(app);
   if (home) {
     for (const fidlist of [JSON.stringify([fsId]), JSON.stringify([Number(fsId)])]) {
-      const dl = await teraboxPostForm(app, "/api/download", {
+      const downloadParams = {
         fidlist,
         type: "dlink",
-        vip: 2,
+        vip: "2",
         sign: home.sign,
-        timestamp: home.timestamp,
-        need_speed: 1,
-      });
-      if (dl.errno === 0) {
-        const link = extractTeraboxDownloadLink(dl);
-        if (link) return link;
-      } else {
-        console.error("Terabox download errno:", dl.errno, dl.errmsg, "fsId:", fsId);
+        timestamp: String(home.timestamp),
+        need_speed: "1",
+      };
+      for (const dl of [
+        await teraboxGet(app, "/api/download", downloadParams),
+        await teraboxPostForm(app, "/api/download", {
+          fidlist,
+          type: "dlink",
+          vip: 2,
+          sign: home.sign,
+          timestamp: home.timestamp,
+          need_speed: 1,
+        }),
+      ]) {
+        if (dl.errno === 0) {
+          const link = extractTeraboxDownloadLink(dl);
+          if (link) return normalizeTeraboxDlink(link);
+        } else {
+          console.error("Terabox download errno:", dl.errno, dl.errmsg, "fsId:", fsId);
+        }
       }
     }
   } else {
@@ -220,7 +288,10 @@ async function resolveTeraboxDlink(
 
   try {
     const dl = (await app.download([Number(fsId)])) as TeraboxApiResponse;
-    if (dl.errno === 0) return extractTeraboxDownloadLink(dl);
+    if (dl.errno === 0) {
+      const link = extractTeraboxDownloadLink(dl);
+      if (link) return normalizeTeraboxDlink(link);
+    }
     console.error("Terabox app.download errno:", dl.errno, dl.errmsg);
   } catch (err) {
     console.error("Terabox app.download error:", err);
@@ -277,9 +348,6 @@ async function fetchTeraboxFileContent(
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type TeraboxApp = any;
-
 async function loadTeraboxApp(): Promise<new (ndus: string) => TeraboxApp> {
   const mod = await import("terabox-api");
   return mod.default;
@@ -292,6 +360,7 @@ export function getDefaultComicsDir(): string {
 async function createTeraboxClient(creds: TeraboxCredentials): Promise<TeraboxApp> {
   const TeraBoxApp = await loadTeraboxApp();
   const app = new TeraBoxApp(creds.ndus.trim());
+  app.TERABOX_TIMEOUT = 120000;
 
   if (creds.jsToken?.trim()) {
     app.data.jsToken = creds.jsToken.trim();
@@ -316,6 +385,17 @@ async function createTeraboxClient(creds: TeraboxCredentials): Promise<TeraboxAp
   }
 
   return app;
+}
+
+export function mergeTeraboxSession(
+  creds: TeraboxCredentials,
+  app: TeraboxApp
+): TeraboxCredentials {
+  return {
+    ...creds,
+    jsToken: app.data.jsToken || creds.jsToken,
+    bdstoken: app.data.bdstoken || creds.bdstoken,
+  };
 }
 
 export function getAdminTeraboxCredentials(): TeraboxCredentials | null {
@@ -369,14 +449,19 @@ export async function saveTeraboxCredentials(
 
 export async function validateTeraboxCredentials(
   creds: TeraboxCredentials
-): Promise<{ ok: boolean; message: string; errno?: number }> {
+): Promise<{ ok: boolean; message: string; errno?: number; session?: TeraboxCredentials }> {
   try {
     const app = await createTeraboxClient(creds);
-    const dir = creds.comicsDir ?? getDefaultComicsDir();
+    const session = mergeTeraboxSession(creds, app);
+    const dir = session.comicsDir ?? getDefaultComicsDir();
     const data = (await app.getRemoteDir(dir)) as TeraboxApiResponse;
 
     if (data.errno === 0) {
-      return { ok: true, message: `Connected. Found ${data.list?.length ?? 0} items in ${dir}.` };
+      return {
+        ok: true,
+        message: `Connected. Found ${data.list?.length ?? 0} items in ${dir}.`,
+        session,
+      };
     }
 
     if (data.errno !== 0 && dir !== "/") {
@@ -385,6 +470,7 @@ export async function validateTeraboxCredentials(
         return {
           ok: true,
           message: `Connected, but folder "${dir}" was not found. Use /Comics or check the folder path.`,
+          session,
         };
       }
     }
@@ -446,18 +532,28 @@ async function listTeraboxFilesRecursive(
 export async function downloadTeraboxFile(
   creds: TeraboxCredentials,
   fsId: string,
-  remotePath?: string
+  remotePath?: string,
+  uid?: string
 ): Promise<ArrayBuffer | null> {
   try {
     const app = await createTeraboxClient(creds);
-    app.TERABOX_TIMEOUT = 120000;
+    const session = mergeTeraboxSession(creds, app);
+
+    if (uid && session.jsToken && session.jsToken !== creds.jsToken) {
+      try {
+        await saveTeraboxCredentials(uid, session);
+      } catch (err) {
+        console.error("Failed to refresh Terabox session tokens:", err);
+      }
+    }
 
     let path = remotePath;
     if (!path) {
-      const dir = creds.comicsDir ?? getDefaultComicsDir();
-      const dirListing = (await app.getRemoteDir(dir)) as TeraboxApiResponse;
-      const match = dirListing.list?.find((item) => String(item.fs_id) === fsId);
-      path = match?.path;
+      const files = await listTeraboxFilesRecursive(
+        app,
+        session.comicsDir ?? getDefaultComicsDir()
+      );
+      path = files.find((file) => file.fs_id === fsId)?.path;
     }
 
     const link = await resolveTeraboxDlink(app, fsId, path);

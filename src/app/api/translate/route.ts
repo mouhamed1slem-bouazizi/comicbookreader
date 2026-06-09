@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Comic not found" }, { status: 404 });
   }
 
-  const buffer = await getComicBuffer(comicId, undefined, meta);
+  const buffer = await getComicBuffer(comicId, undefined, meta, uid);
   if (!buffer) {
     return NextResponse.json({ error: "Could not load comic" }, { status: 404 });
   }

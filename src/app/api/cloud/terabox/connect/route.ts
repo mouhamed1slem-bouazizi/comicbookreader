@@ -42,11 +42,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await saveTeraboxCredentials(uid, creds);
+    const session = validation.session ?? creds;
+    await saveTeraboxCredentials(uid, session);
 
     let indexed = 0;
     try {
-      indexed = await syncTeraboxCatalogMetadata(creds, uid);
+      indexed = await syncTeraboxCatalogMetadata(session, uid);
     } catch (err) {
       console.error("Terabox metadata sync failed:", err);
     }

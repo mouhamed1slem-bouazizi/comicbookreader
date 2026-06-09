@@ -57,13 +57,13 @@ export async function getComicMetadata(
   }
 }
 
-export async function ensureComicPageCount(comic: Comic): Promise<number> {
+export async function ensureComicPageCount(comic: Comic, uid?: string): Promise<number> {
   if (comic.totalPages > 0) return comic.totalPages;
 
   const cached = pageCountCache.get(comic.id);
   if (cached) return cached;
 
-  const buffer = await getComicBuffer(comic.id, undefined, comic);
+  const buffer = await getComicBuffer(comic.id, undefined, comic, uid);
   if (!buffer) return 0;
 
   const pages = await listComicPages(buffer, comic.format);
@@ -88,7 +88,8 @@ export async function ensureComicPageCount(comic: Comic): Promise<number> {
 export async function getComicBuffer(
   comicId: string,
   localBuffer?: ArrayBuffer,
-  metaOverride?: Comic
+  metaOverride?: Comic,
+  uid?: string
 ): Promise<ArrayBuffer | null> {
   if (localBuffer) return localBuffer;
 
@@ -128,11 +129,12 @@ export async function getComicBuffer(
     }
   } else if (source.provider === "terabox") {
     if (!source.fileId) return null;
-    const creds = source.userId
-      ? await getUserTeraboxCredentials(source.userId)
+    const credUserId = uid ?? source.userId;
+    const creds = credUserId
+      ? await getUserTeraboxCredentials(credUserId)
       : getAdminTeraboxCredentials();
     if (!creds) return null;
-    buffer = await downloadTeraboxFile(creds, source.fileId, source.path);
+    buffer = await downloadTeraboxFile(creds, source.fileId, source.path, credUserId);
   }
 
   if (buffer) {

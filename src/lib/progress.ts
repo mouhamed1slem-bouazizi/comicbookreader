@@ -53,6 +53,10 @@ function stripUndefined<T extends Record<string, unknown>>(obj: T): T {
   return result as T;
 }
 
+function cleanSourceRef(sourceRef: ComicSourceRef): ComicSourceRef {
+  return stripUndefined(sourceRef as unknown as Record<string, unknown>) as unknown as ComicSourceRef;
+}
+
 export async function saveProgress(
   uid: string,
   data: {
@@ -71,7 +75,7 @@ export async function saveProgress(
     totalPages: data.totalPages,
     percent: formatPercent(data.pageIndex + 1, data.totalPages),
     updatedAt: new Date().toISOString(),
-    sourceRef: data.sourceRef,
+    sourceRef: cleanSourceRef(data.sourceRef),
     ...(data.coverUrl ? { coverUrl: data.coverUrl } : {}),
   };
 
@@ -126,7 +130,7 @@ export async function markCompleted(
     title: data.title,
     completedAt: new Date().toISOString(),
     lastPageIndex: data.lastPageIndex,
-    sourceRef: data.sourceRef,
+    sourceRef: cleanSourceRef(data.sourceRef),
     ...(data.coverUrl ? { coverUrl: data.coverUrl } : {}),
   };
 
