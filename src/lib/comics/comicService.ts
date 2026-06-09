@@ -132,7 +132,7 @@ export async function getComicBuffer(
       ? await getUserTeraboxCredentials(source.userId)
       : getAdminTeraboxCredentials();
     if (!creds) return null;
-    buffer = await downloadTeraboxFile(creds, source.fileId);
+    buffer = await downloadTeraboxFile(creds, source.fileId, source.path);
   }
 
   if (buffer) {

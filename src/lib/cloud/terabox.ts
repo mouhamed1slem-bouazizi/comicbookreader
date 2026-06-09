@@ -23,13 +23,79 @@ interface TeraboxListItem {
   path: string;
   size: number;
   isdir: number;
+  dlink?: string;
+  direct_link?: string;
 }
 
 interface TeraboxApiResponse {
   errno: number;
   errmsg?: string;
   list?: TeraboxListItem[];
-  dlink?: Array<{ dlink: string }>;
+  dlink?: Array<string | { dlink?: string }>;
+}
+
+const TERABOX_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
+
+function extractTeraboxDownloadLink(data: TeraboxApiResponse): string | null {
+  for (const item of data.list ?? []) {
+    if (item.dlink) return item.dlink;
+    if (item.direct_link) return item.direct_link;
+  }
+
+  for (const entry of data.dlink ?? []) {
+    if (typeof entry === "string" && entry) return entry;
+    if (entry && typeof entry === "object" && entry.dlink) return entry.dlink;
+  }
+
+  return null;
+}
+
+async function fetchTeraboxFileContent(
+  link: string,
+  cookie: string,
+  userAgent: string
+): Promise<ArrayBuffer | null> {
+  const headers = {
+    Cookie: cookie,
+    "User-Agent": userAgent,
+    Referer: "https://www.terabox.com/",
+  };
+
+  try {
+    const probe = await fetch(link, { method: "GET", redirect: "manual", headers });
+    if (probe.status >= 300 && probe.status < 400) {
+      const location = probe.headers.get("location");
+      if (location) {
+        const res = await fetch(location, {
+          headers: { "User-Agent": userAgent },
+          signal: AbortSignal.timeout(TERABOX_DOWNLOAD_TIMEOUT_MS),
+        });
+        if (!res.ok) {
+          console.error("Terabox CDN fetch failed:", res.status, res.statusText);
+          return null;
+        }
+        return res.arrayBuffer();
+      }
+    }
+    if (probe.ok) return probe.arrayBuffer();
+  } catch (err) {
+    console.error("Terabox redirect probe failed:", err);
+  }
+
+  try {
+    const res = await fetch(link, {
+      headers,
+      signal: AbortSignal.timeout(TERABOX_DOWNLOAD_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      console.error("Terabox file fetch failed:", res.status, res.statusText);
+      return null;
+    }
+    return res.arrayBuffer();
+  } catch (err) {
+    console.error("Terabox file fetch error:", err);
+    return null;
+  }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -194,31 +260,40 @@ async function listTeraboxFilesRecursive(
 
 export async function downloadTeraboxFile(
   creds: TeraboxCredentials,
-  fsId: string
+  fsId: string,
+  remotePath?: string
 ): Promise<ArrayBuffer | null> {
   try {
     const app = await createTeraboxClient(creds);
-    const data = (await app.download([Number(fsId)])) as TeraboxApiResponse & {
-      dlink?: string[];
-    };
+    app.TERABOX_TIMEOUT = 120000;
+
+    const fsIdNum = Number(fsId);
+    let data = (await app.download([fsIdNum])) as TeraboxApiResponse;
 
     if (data.errno !== 0) {
       console.error("Terabox download errno:", data.errno, data.errmsg);
       return null;
     }
 
-    const link = Array.isArray(data.dlink) ? data.dlink[0] : null;
-    if (!link) return null;
+    let link = extractTeraboxDownloadLink(data);
 
-    const res = await fetch(link, {
-      headers: {
-        Cookie: app.params.cookie,
-        "User-Agent": app.params.ua,
-        Referer: "https://www.terabox.com/",
-      },
-    });
-    if (!res.ok) return null;
-    return res.arrayBuffer();
+    if (!link && remotePath) {
+      const meta = (await app.getFileMeta([
+        { fs_id: fsIdNum, path: remotePath },
+      ])) as TeraboxApiResponse;
+      if (meta.errno === 0) {
+        link = extractTeraboxDownloadLink(meta);
+      } else {
+        console.error("Terabox getFileMeta errno:", meta.errno, meta.errmsg);
+      }
+    }
+
+    if (!link) {
+      console.error("Terabox download: no dlink in response for fs_id", fsId);
+      return null;
+    }
+
+    return fetchTeraboxFileContent(link, app.params.cookie, app.params.ua);
   } catch (err) {
     console.error("Terabox download error:", err);
     return null;

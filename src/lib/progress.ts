@@ -39,6 +39,20 @@ function saveLocalCompleted(uid: string, data: Record<string, CompletedComic>) {
   localStorage.setItem(`${COMPLETED_KEY}_${uid}`, JSON.stringify(data));
 }
 
+/** Firestore rejects undefined field values — strip them recursively. */
+function stripUndefined<T extends Record<string, unknown>>(obj: T): T {
+  const result = { ...obj } as Record<string, unknown>;
+  for (const key of Object.keys(result)) {
+    const value = result[key];
+    if (value === undefined) {
+      delete result[key];
+    } else if (value && typeof value === "object" && !Array.isArray(value)) {
+      result[key] = stripUndefined(value as Record<string, unknown>);
+    }
+  }
+  return result as T;
+}
+
 export async function saveProgress(
   uid: string,
   data: {
@@ -68,7 +82,10 @@ export async function saveProgress(
     return;
   }
 
-  await setDoc(doc(getFirebaseDb(), "users", uid, "progress", data.comicId), progress);
+  await setDoc(
+    doc(getFirebaseDb(), "users", uid, "progress", data.comicId),
+    stripUndefined(progress as unknown as Record<string, unknown>)
+  );
 }
 
 export async function getProgressList(uid: string): Promise<ReadingProgress[]> {
@@ -123,7 +140,10 @@ export async function markCompleted(
     return;
   }
 
-  await setDoc(doc(getFirebaseDb(), "users", uid, "completed", data.comicId), completed);
+  await setDoc(
+    doc(getFirebaseDb(), "users", uid, "completed", data.comicId),
+    stripUndefined(completed as unknown as Record<string, unknown>)
+  );
   await deleteDoc(doc(getFirebaseDb(), "users", uid, "progress", data.comicId));
 }
 

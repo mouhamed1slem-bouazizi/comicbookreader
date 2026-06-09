@@ -175,7 +175,8 @@ export function ComicReader({
       (typeof navigator !== "undefined" &&
         !(navigator as Navigator & { connection?: { type?: string } }).connection?.type?.includes("cellular")));
 
-  const effectiveTotalPages = resolvedTotalPages || totalPages || 1;
+  const effectiveTotalPages =
+    resolvedTotalPages > 0 ? resolvedTotalPages : totalPages > 0 ? totalPages : 0;
 
   const { regions } = useTranslationPrefetch(
     comicId,
@@ -189,14 +190,18 @@ export function ComicReader({
   const persistProgress = useCallback(
     async (index: number) => {
       if (!user) return;
-      await saveProgress(user.uid, {
-        comicId,
-        title,
-        pageIndex: index,
-        totalPages: effectiveTotalPages,
-        sourceRef,
-        coverUrl,
-      });
+      try {
+        await saveProgress(user.uid, {
+          comicId,
+          title,
+          pageIndex: index,
+          totalPages: effectiveTotalPages > 0 ? effectiveTotalPages : Math.max(index + 1, 1),
+          sourceRef,
+          coverUrl,
+        });
+      } catch (err) {
+        console.error("Failed to save reading progress:", err);
+      }
     },
     [user, comicId, title, effectiveTotalPages, sourceRef, coverUrl]
   );
@@ -290,7 +295,7 @@ export function ComicReader({
           <div className="min-w-0">
             <h1 className="truncate text-sm font-medium lg:text-base">{title}</h1>
             <p className="text-xs text-zinc-500">
-              Page {pageIndex + 1} / {effectiveTotalPages}
+              Page {pageIndex + 1} / {effectiveTotalPages > 0 ? effectiveTotalPages : "…"}
               {pageLoading ? " · loading..." : ""}
             </p>
           </div>
@@ -404,7 +409,7 @@ export function ComicReader({
             variant="ghost"
             size="icon"
             onClick={() => goTo(pageIndex + 1)}
-            disabled={pageIndex >= effectiveTotalPages - 1}
+            disabled={effectiveTotalPages > 0 && pageIndex >= effectiveTotalPages - 1}
             aria-label="Next"
           >
             <ChevronRight className="h-5 w-5" />
