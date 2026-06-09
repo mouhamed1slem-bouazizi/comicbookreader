@@ -102,13 +102,71 @@ export function ComicReader({
 }: ComicReaderProps) {
   const { user, settings, getIdToken } = useAuth();
   const [pageIndex, setPageIndex] = useState(initialPage);
+  const [pageUrl, setPageUrl] = useState("");
+  const [pageLoading, setPageLoading] = useState(true);
+  const [resolvedTotalPages, setResolvedTotalPages] = useState(totalPages);
+  const blobUrlRef = useRef<string | null>(null);
+
   const [showTranslation, setShowTranslation] = useState(settings.translationEnabled);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const touchStartX = useRef<number | null>(null);
 
-  const pageUrl = `/api/comics/${encodeURIComponent(comicId)}/pages/${pageIndex}`;
+  useEffect(() => {
+    setResolvedTotalPages(totalPages);
+  }, [totalPages]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPage() {
+      setPageLoading(true);
+      const token = await getIdToken();
+      const res = await fetch(
+        `/api/comics/${encodeURIComponent(comicId)}/pages/${pageIndex}`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} }
+      );
+
+      if (cancelled) return;
+
+      if (!res.ok) {
+        setPageUrl("");
+        setPageLoading(false);
+        return;
+      }
+
+      const blob = await res.blob();
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+      const url = URL.createObjectURL(blob);
+      blobUrlRef.current = url;
+      setPageUrl(url);
+      setPageLoading(false);
+    }
+
+    void loadPage();
+    return () => {
+      cancelled = true;
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+    };
+  }, [comicId, pageIndex, getIdToken]);
+
+  useEffect(() => {
+    if (resolvedTotalPages > 0) return;
+    void (async () => {
+      const token = await getIdToken();
+      const res = await fetch(`/api/comics/${encodeURIComponent(comicId)}/meta`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { totalPages: number };
+        if (data.totalPages > 0) setResolvedTotalPages(data.totalPages);
+      }
+    })();
+  }, [comicId, resolvedTotalPages, getIdToken]);
 
   const translationEnabled =
     settings.translationEnabled &&
@@ -117,10 +175,12 @@ export function ComicReader({
       (typeof navigator !== "undefined" &&
         !(navigator as Navigator & { connection?: { type?: string } }).connection?.type?.includes("cellular")));
 
+  const effectiveTotalPages = resolvedTotalPages || totalPages || 1;
+
   const { regions } = useTranslationPrefetch(
     comicId,
     pageIndex,
-    totalPages,
+    effectiveTotalPages,
     translationEnabled,
     settings.targetLang,
     getIdToken
@@ -133,12 +193,12 @@ export function ComicReader({
         comicId,
         title,
         pageIndex: index,
-        totalPages,
+        totalPages: effectiveTotalPages,
         sourceRef,
         coverUrl,
       });
     },
-    [user, comicId, title, totalPages, sourceRef, coverUrl]
+    [user, comicId, title, effectiveTotalPages, sourceRef, coverUrl]
   );
 
   useEffect(() => {
@@ -147,10 +207,10 @@ export function ComicReader({
 
   const goTo = useCallback(
     (index: number) => {
-      const next = Math.max(0, Math.min(totalPages - 1, index));
+      const next = Math.max(0, Math.min(effectiveTotalPages - 1, index));
       setPageIndex(next);
     },
-    [totalPages]
+    [effectiveTotalPages]
   );
 
   const handleComplete = async () => {
@@ -230,7 +290,8 @@ export function ComicReader({
           <div className="min-w-0">
             <h1 className="truncate text-sm font-medium lg:text-base">{title}</h1>
             <p className="text-xs text-zinc-500">
-              Page {pageIndex + 1} / {totalPages}
+              Page {pageIndex + 1} / {effectiveTotalPages}
+              {pageLoading ? " · loading..." : ""}
             </p>
           </div>
         </div>
@@ -267,7 +328,7 @@ export function ComicReader({
         {sidebarOpen && (
           <aside className="hidden w-48 shrink-0 overflow-y-auto border-r border-zinc-800 p-2 lg:block xl:w-56">
             <div className="grid grid-cols-2 gap-2 xl:grid-cols-1">
-              {Array.from({ length: Math.min(totalPages, 50) }, (_, i) => (
+              {Array.from({ length: Math.min(effectiveTotalPages, 50) }, (_, i) => (
                 <button
                   key={i}
                   onClick={() => goTo(i)}
@@ -281,8 +342,8 @@ export function ComicReader({
                   {i + 1}
                 </button>
               ))}
-              {totalPages > 50 && (
-                <p className="col-span-2 text-xs text-zinc-600">+{totalPages - 50} more pages</p>
+              {effectiveTotalPages > 50 && (
+                <p className="col-span-2 text-xs text-zinc-600">+{effectiveTotalPages - 50} more pages</p>
               )}
             </div>
           </aside>
@@ -301,13 +362,19 @@ export function ComicReader({
           />
 
           <div className="relative h-full p-2 md:p-4">
-            <ComicPage
-              src={pageUrl}
-              alt={`${title} page ${pageIndex + 1}`}
-              regions={regions}
-              showTranslation={showTranslation && translationEnabled}
-              fontSize={settings.overlayFontSize}
-            />
+            {pageUrl ? (
+              <ComicPage
+                src={pageUrl}
+                alt={`${title} page ${pageIndex + 1}`}
+                regions={regions}
+                showTranslation={translationEnabled}
+                fontSize={settings.overlayFontSize}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center text-zinc-500">
+                {pageLoading ? "Loading page..." : "Could not load page. Reconnect Terabox in Settings."}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -327,7 +394,7 @@ export function ComicReader({
           <input
             type="range"
             min={0}
-            max={totalPages - 1}
+            max={Math.max(effectiveTotalPages - 1, 0)}
             value={pageIndex}
             onChange={(e) => goTo(Number(e.target.value))}
             className="min-w-0 flex-1 accent-violet-500"
@@ -337,7 +404,7 @@ export function ComicReader({
             variant="ghost"
             size="icon"
             onClick={() => goTo(pageIndex + 1)}
-            disabled={pageIndex >= totalPages - 1}
+            disabled={pageIndex >= effectiveTotalPages - 1}
             aria-label="Next"
           >
             <ChevronRight className="h-5 w-5" />
@@ -353,7 +420,7 @@ export function ComicReader({
             <Languages className="h-4 w-4" />
           </Button>
 
-          {pageIndex >= totalPages - 1 && (
+          {effectiveTotalPages > 0 && pageIndex >= effectiveTotalPages - 1 && (
             <Button variant="secondary" size="sm" onClick={() => void handleComplete()}>
               <CheckCircle className="h-4 w-4" />
               <span className="hidden sm:inline">Finish</span>

@@ -69,13 +69,13 @@ export default function SettingsPageContent() {
       };
       if (res.ok) {
         setMessage(
-          `Terabox connected. ${data.message ?? ""} Indexed ${data.indexed ?? 0} comics.`
+          `Terabox connected. ${data.message ?? ""} Indexed ${data.indexed ?? 0} comics. Open the Library → Terabox tab.`
         );
       } else {
-        setMessage(data.error ?? "Terabox connection failed.");
+        setMessage(data.error ?? `Terabox connection failed (${res.status}).`);
       }
-    } catch {
-      setMessage("Terabox connection failed.");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Terabox connection failed.");
     } finally {
       setConnecting(false);
     }

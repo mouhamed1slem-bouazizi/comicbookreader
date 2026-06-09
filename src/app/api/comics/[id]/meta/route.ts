@@ -1,14 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getComicMetadata } from "@/lib/comics/comicService";
+import { verifyIdToken } from "@/lib/firebase/admin";
+import { getComicMetadata, ensureComicPageCount } from "@/lib/comics/comicService";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { id } = await params;
-  const comic = await getComicMetadata(id);
-  if (!comic) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  try {
+    const { id } = await params;
+    const uid = await verifyIdToken(request.headers.get("authorization"));
+    const comic = await getComicMetadata(id, uid ?? undefined);
+    if (!comic) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    if (comic.totalPages === 0) {
+      comic.totalPages = await ensureComicPageCount(comic);
+    }
+
+    return NextResponse.json(comic);
+  } catch (err) {
+    console.error("GET /api/comics/[id]/meta error:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Failed to load comic" },
+      { status: 500 }
+    );
   }
-  return NextResponse.json(comic);
 }

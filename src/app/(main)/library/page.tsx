@@ -46,7 +46,7 @@ export default function LibraryPage() {
 
     const token = await getIdToken();
     if (token && tab === "terabox") {
-      const comics = await fetchCatalogComics(token, "my_cloud");
+      const comics = await fetchCatalogComics(token, "terabox");
       setCatalogComics(comics.filter((c) => c.source.provider === "terabox"));
     } else if (token && tab === "shared") {
       const comics = await fetchCatalogComics(token, "shared");

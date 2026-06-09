@@ -80,18 +80,19 @@ export function getAdminTeraboxCredentials(): TeraboxCredentials | null {
 }
 
 export async function getUserTeraboxCredentials(uid: string): Promise<TeraboxCredentials | null> {
-  const doc = await getAdminDb()
-    .collection("users")
-    .doc(uid)
-    .collection("connections")
-    .doc("terabox")
-    .get();
-  if (!doc.exists) return null;
-  const data = doc.data();
-  if (!data?.encryptedCredentials) return null;
   try {
+    const doc = await getAdminDb()
+      .collection("users")
+      .doc(uid)
+      .collection("connections")
+      .doc("terabox")
+      .get();
+    if (!doc.exists) return null;
+    const data = doc.data();
+    if (!data?.encryptedCredentials) return null;
     return JSON.parse(decryptToken(data.encryptedCredentials as string)) as TeraboxCredentials;
-  } catch {
+  } catch (err) {
+    console.error("getUserTeraboxCredentials error:", err);
     return null;
   }
 }
@@ -222,6 +223,98 @@ export async function downloadTeraboxFile(
     console.error("Terabox download error:", err);
     return null;
   }
+}
+
+export async function syncTeraboxCatalogMetadata(
+  creds: TeraboxCredentials,
+  userId: string
+): Promise<number> {
+  const files = await listTeraboxFiles(creds);
+  const db = getAdminDb();
+  let count = 0;
+
+  for (const file of files) {
+    const format: ComicFormat = file.server_filename.toLowerCase().endsWith(".cbz")
+      ? "cbz"
+      : "cbr";
+    const comicId = `terabox-${file.fs_id}`;
+
+    await db
+      .collection("catalog")
+      .doc("comics")
+      .collection("items")
+      .doc(comicId)
+      .set(
+        {
+          id: comicId,
+          title: file.server_filename.replace(/\.(cbz|cbr)$/i, ""),
+          totalPages: 0,
+          format,
+          source: {
+            provider: "terabox",
+            fileId: file.fs_id,
+            path: file.path,
+            sizeBytes: file.size,
+            userId,
+          },
+          indexedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    count++;
+  }
+  return count;
+}
+
+export function teraboxFileToComic(file: TeraboxFile, userId: string): Comic {
+  const format: ComicFormat = file.server_filename.toLowerCase().endsWith(".cbz")
+    ? "cbz"
+    : "cbr";
+  return {
+    id: `terabox-${file.fs_id}`,
+    title: file.server_filename.replace(/\.(cbz|cbr)$/i, ""),
+    totalPages: 0,
+    format,
+    source: {
+      provider: "terabox",
+      fileId: file.fs_id,
+      path: file.path,
+      sizeBytes: file.size,
+      userId,
+    },
+    indexedAt: new Date().toISOString(),
+  };
+}
+
+export async function browseTeraboxComics(uid: string): Promise<Comic[]> {
+  const creds = await getUserTeraboxCredentials(uid);
+  if (!creds) return [];
+  const files = await listTeraboxFiles(creds);
+  return files.map((file) => teraboxFileToComic(file, uid));
+}
+
+export async function resolveTeraboxComic(
+  comicId: string,
+  uid: string
+): Promise<Comic | null> {
+  if (!comicId.startsWith("terabox-")) return null;
+  const fsId = comicId.replace(/^terabox-/, "");
+
+  const db = getAdminDb();
+  const doc = await db
+    .collection("catalog")
+    .doc("comics")
+    .collection("items")
+    .doc(comicId)
+    .get();
+  if (doc.exists) return doc.data() as Comic;
+
+  const creds = await getUserTeraboxCredentials(uid);
+  if (!creds) return null;
+  const files = await listTeraboxFiles(creds);
+  const file = files.find((f) => f.fs_id === fsId);
+  if (!file) return null;
+  return teraboxFileToComic(file, uid);
 }
 
 export async function indexTeraboxLibrary(
