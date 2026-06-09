@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+    }
+
+    match /users/{uid}/progress/{comicId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    match /users/{uid}/completed/{comicId} {
+      allow read, write: if isOwner(uid);
+    }
+
+    match /users/{uid}/connections/{provider} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    match /catalog/comics/items/{comicId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /catalog_covers/{comicId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /translations/{comicId}/pages/{pageKey} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+  }
+}

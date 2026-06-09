@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Comic Book Reader
 
-## Getting Started
+A responsive web comic reader for **CBZ/CBR** files from **Google Drive**, **Terabox**, and local uploads. Features Firebase authentication, reading history, and AI page translation via OpenRouter.
 
-First, run the development server:
+## Features
+
+- Responsive layout for desktop, tablet, and mobile
+- Hybrid library: shared catalog + personal cloud (Google Drive / Terabox)
+- Local CBZ/CBR upload and reading (IndexedDB)
+- Reading progress and completed history (Firestore or local fallback)
+- Auto-translate speech bubbles with OpenRouter (cached per page)
+- PWA support with service worker page cache
+
+## Quick Start
 
 ```bash
+npm install
+cp .env.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000). Without Firebase configured, **demo mode** accepts any email/password.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment Setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+See `.env.example` for all variables. Minimum for full features:
 
-## Learn More
+1. **Firebase** – Create a project, enable Auth (Email + Google) and Firestore. Copy client config to `NEXT_PUBLIC_FIREBASE_*` and service account JSON to `FIREBASE_SERVICE_ACCOUNT_JSON`.
+2. **Google Drive** – Create OAuth credentials, set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_DRIVE_FOLDER_ID` for the shared catalog.
+3. **Terabox** – Set `TERABOX_NDUS`, `TERABOX_JS_TOKEN`, `TERABOX_APP_ID` from browser session (see Terabox docs).
+4. **OpenRouter** – Set `OPENROUTER_API_KEY` for AI translation.
 
-To learn more about Next.js, take a look at the following resources:
+Deploy Firestore rules from `firestore.rules`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Admin
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Visit `/admin/catalog` to index comics from Google Drive and Terabox into the shared library.
 
-## Deploy on Vercel
+## Deploy
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Recommended: **Vercel** (Next.js) + **Firebase** (Auth/Firestore).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run build
+npm start
+```
+
+## Project Structure
+
+- `src/app/(main)/` – Library, reader, settings, continue reading
+- `src/app/api/` – Comic streaming, translation, cloud proxies
+- `src/lib/comics/` – CBZ/CBR extraction
+- `src/lib/cloud/` – Google Drive & Terabox adapters
+- `src/lib/translate/` – OpenRouter + Firestore cache
