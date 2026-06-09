@@ -82,10 +82,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       return;
     }
-    const snap = await getDoc(doc(getFirebaseDb(), "users", uid));
-    if (snap.exists()) {
-      const data = snap.data();
-      setSettings({ ...DEFAULT_USER_SETTINGS, ...(data.settings as UserSettings) });
+    try {
+      const snap = await getDoc(doc(getFirebaseDb(), "users", uid));
+      if (snap.exists()) {
+        const data = snap.data();
+        setSettings({ ...DEFAULT_USER_SETTINGS, ...(data.settings as UserSettings) });
+      }
+    } catch (err) {
+      console.warn("Could not load settings from Firestore:", err);
     }
   }, [firebaseEnabled]);
 
@@ -102,15 +106,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(nextUser);
       if (nextUser) {
         await loadSettings(nextUser.uid);
-        const ref = doc(getFirebaseDb(), "users", nextUser.uid);
-        const snap = await getDoc(ref);
-        if (!snap.exists()) {
-          await setDoc(ref, {
-            email: nextUser.email,
-            displayName: nextUser.displayName ?? "",
-            createdAt: new Date().toISOString(),
-            settings: DEFAULT_USER_SETTINGS,
-          });
+        try {
+          const ref = doc(getFirebaseDb(), "users", nextUser.uid);
+          const snap = await getDoc(ref);
+          if (!snap.exists()) {
+            await setDoc(ref, {
+              email: nextUser.email,
+              displayName: nextUser.displayName ?? "",
+              createdAt: new Date().toISOString(),
+              settings: DEFAULT_USER_SETTINGS,
+            });
+          }
+        } catch (err) {
+          console.warn("Could not sync user profile to Firestore:", err);
         }
       }
       setLoading(false);
@@ -159,11 +167,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(`settings_${user.uid}`, JSON.stringify(next));
       return;
     }
-    await setDoc(
-      doc(getFirebaseDb(), "users", user.uid),
-      { settings: next },
-      { merge: true }
-    );
+    try {
+      await setDoc(
+        doc(getFirebaseDb(), "users", user.uid),
+        { settings: next },
+        { merge: true }
+      );
+    } catch (err) {
+      console.warn("Could not save settings to Firestore:", err);
+    }
   };
 
   const getIdToken = async () => {

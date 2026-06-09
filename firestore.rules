@@ -10,7 +10,8 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read, write: if isOwner(uid);
+      allow read, create, update: if isOwner(uid);
+      allow delete: if isOwner(uid);
     }
 
     match /users/{uid}/progress/{comicId} {
@@ -26,7 +27,7 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    match /catalog/comics/items/{comicId} {
+    match /catalog/{docId}/items/{comicId} {
       allow read: if isSignedIn();
       allow write: if false;
     }

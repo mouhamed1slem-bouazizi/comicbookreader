@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
     ],
     unoptimized: true,
   },
-  serverExternalPackages: ["firebase-admin", "googleapis", "node-unrar-js"],
+  serverExternalPackages: ["firebase-admin", "googleapis", "node-unrar-js", "terabox-api"],
 };
 
 export default nextConfig;

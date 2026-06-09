@@ -19,11 +19,11 @@ import type { Comic } from "@/types/comic";
 import type { LocalComicMeta } from "@/types/comic";
 import { getProgressList } from "@/lib/progress";
 
-type Tab = "shared" | "local" | "my_cloud";
+type Tab = "terabox" | "local" | "shared";
 
 export default function LibraryPage() {
   const { user, getIdToken } = useAuth();
-  const [tab, setTab] = useState<Tab>("shared");
+  const [tab, setTab] = useState<Tab>("terabox");
   const [catalogComics, setCatalogComics] = useState<Comic[]>([]);
   const [localComics, setLocalComics] = useState<LocalComicMeta[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, number>>({});
@@ -45,8 +45,11 @@ export default function LibraryPage() {
     }
 
     const token = await getIdToken();
-    if (token && tab !== "local") {
-      const comics = await fetchCatalogComics(token, tab === "my_cloud" ? "my_cloud" : "shared");
+    if (token && tab === "terabox") {
+      const comics = await fetchCatalogComics(token, "my_cloud");
+      setCatalogComics(comics.filter((c) => c.source.provider === "terabox"));
+    } else if (token && tab === "shared") {
+      const comics = await fetchCatalogComics(token, "shared");
       setCatalogComics(comics);
     } else {
       setCatalogComics([]);
@@ -125,7 +128,7 @@ export default function LibraryPage() {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="flex gap-1 rounded-lg bg-zinc-900 p-1">
-          {(["shared", "local", "my_cloud"] as Tab[]).map((t) => (
+          {(["terabox", "local", "shared"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -133,7 +136,7 @@ export default function LibraryPage() {
                 tab === t ? "bg-violet-600 text-white" : "text-zinc-400 hover:text-zinc-100"
               }`}
             >
-              {t === "my_cloud" ? "My Cloud" : t}
+              {t === "terabox" ? "Terabox" : t}
             </button>
           ))}
         </div>
@@ -173,9 +176,11 @@ export default function LibraryPage() {
       ) : filteredCatalog.length === 0 ? (
         <EmptyState
           message={
-            tab === "shared"
-              ? "No shared comics indexed yet. Admin can index Google Drive and Terabox folders."
-              : "Connect Google Drive or Terabox in Settings to see your cloud comics."
+            tab === "terabox"
+              ? "No Terabox comics yet. Go to Settings, connect Terabox with your ndus cookie, and index your /Comics folder."
+              : tab === "shared"
+              ? "No shared comics indexed yet. Admin can index Terabox from Admin → Catalog."
+              : "Connect Terabox in Settings to see your cloud comics."
           }
         />
       ) : (

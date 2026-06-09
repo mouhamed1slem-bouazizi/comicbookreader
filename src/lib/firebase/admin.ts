@@ -12,7 +12,16 @@ function parseServiceAccount(): Record<string, string> | null {
   try {
     return JSON.parse(json) as Record<string, string>;
   } catch {
-    return null;
+    // Allow JSON with escaped newlines pasted from Firebase console
+    try {
+      const normalized = json.replace(/\n/g, "\\n").replace(/\\\\n/g, "\\n");
+      return JSON.parse(normalized) as Record<string, string>;
+    } catch {
+      console.error(
+        "FIREBASE_SERVICE_ACCOUNT_JSON is invalid. Paste the full service account JSON (one line)."
+      );
+      return null;
+    }
   }
 }
 

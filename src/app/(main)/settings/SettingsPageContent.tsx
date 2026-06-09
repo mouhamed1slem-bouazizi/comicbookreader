@@ -13,7 +13,7 @@ export default function SettingsPageContent() {
   const searchParams = useSearchParams();
   const [teraboxNdus, setTeraboxNdus] = useState("");
   const [teraboxJsToken, setTeraboxJsToken] = useState("");
-  const [teraboxAppId, setTeraboxAppId] = useState("250528");
+  const [teraboxComicsDir, setTeraboxComicsDir] = useState("/Comics");
   const [connecting, setConnecting] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -46,6 +46,7 @@ export default function SettingsPageContent() {
 
   const connectTerabox = async () => {
     setConnecting(true);
+    setMessage("");
     try {
       const token = await getIdToken();
       const res = await fetch("/api/cloud/terabox/connect", {
@@ -56,14 +57,21 @@ export default function SettingsPageContent() {
         },
         body: JSON.stringify({
           ndus: teraboxNdus,
-          jsToken: teraboxJsToken,
-          appId: teraboxAppId,
+          jsToken: teraboxJsToken || undefined,
+          appId: "250528",
+          comicsDir: teraboxComicsDir,
         }),
       });
+      const data = (await res.json()) as {
+        error?: string;
+        message?: string;
+        indexed?: number;
+      };
       if (res.ok) {
-        setMessage("Terabox connected successfully.");
+        setMessage(
+          `Terabox connected. ${data.message ?? ""} Indexed ${data.indexed ?? 0} comics.`
+        );
       } else {
-        const data = (await res.json()) as { error: string };
         setMessage(data.error ?? "Terabox connection failed.");
       }
     } catch {
@@ -170,42 +178,38 @@ export default function SettingsPageContent() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Cloud Connections</CardTitle>
+          <CardTitle>Terabox Connection</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div>
-            <p className="mb-2 text-sm text-zinc-400">
-              Connect your Google Drive to browse personal comic files in My Cloud.
-            </p>
-            <Button onClick={() => void connectGoogleDrive()} disabled={connecting}>
-              Connect Google Drive
-            </Button>
+          <div className="rounded-lg bg-zinc-800/50 p-3 text-sm text-zinc-400">
+            <p className="mb-2 font-medium text-zinc-300">How to get credentials:</p>
+            <ol className="list-decimal space-y-1 pl-4">
+              <li>Open <strong className="text-zinc-200">terabox.com</strong> and log in.</li>
+              <li>Press F12 → Application → Cookies → copy the <strong className="text-zinc-200">ndus</strong> value.</li>
+              <li>Optional: Network tab → filter <strong className="text-zinc-200">list</strong> → copy <strong className="text-zinc-200">jsToken</strong> from the request URL (helps if auto-fetch fails).</li>
+              <li>Set comics folder to <strong className="text-zinc-200">/Comics</strong> if your comics are in that folder.</li>
+            </ol>
+            <p className="mt-2 text-amber-400/90">Credentials expire — reconnect when comics stop loading.</p>
           </div>
-
-          <div className="border-t border-zinc-800 pt-4">
-            <p className="mb-3 text-sm text-zinc-400">
-              Terabox requires session credentials from your browser (ndus cookie and jsToken).
-            </p>
-            <div className="space-y-2">
-              <Input
-                placeholder="ndus cookie value"
-                value={teraboxNdus}
-                onChange={(e) => setTeraboxNdus(e.target.value)}
-              />
-              <Input
-                placeholder="jsToken"
-                value={teraboxJsToken}
-                onChange={(e) => setTeraboxJsToken(e.target.value)}
-              />
-              <Input
-                placeholder="appId (default 250528)"
-                value={teraboxAppId}
-                onChange={(e) => setTeraboxAppId(e.target.value)}
-              />
-              <Button onClick={() => void connectTerabox()} disabled={connecting}>
-                Connect Terabox
-              </Button>
-            </div>
+          <div className="space-y-2">
+            <Input
+              placeholder="ndus cookie (required)"
+              value={teraboxNdus}
+              onChange={(e) => setTeraboxNdus(e.target.value)}
+            />
+            <Input
+              placeholder="jsToken (optional — copied from Network tab list request)"
+              value={teraboxJsToken}
+              onChange={(e) => setTeraboxJsToken(e.target.value)}
+            />
+            <Input
+              placeholder="Comics folder path"
+              value={teraboxComicsDir}
+              onChange={(e) => setTeraboxComicsDir(e.target.value)}
+            />
+            <Button onClick={() => void connectTerabox()} disabled={connecting || !teraboxNdus.trim()}>
+              {connecting ? "Connecting..." : "Connect Terabox & Index Comics"}
+            </Button>
           </div>
         </CardContent>
       </Card>
