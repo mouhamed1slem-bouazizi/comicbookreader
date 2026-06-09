@@ -26,12 +26,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
 
-  const meta = await getComicMetadata(comicId);
+  const meta = await getComicMetadata(comicId, uid);
   if (!meta) {
     return NextResponse.json({ error: "Comic not found" }, { status: 404 });
   }
 
-  const buffer = await getComicBuffer(comicId);
+  const buffer = await getComicBuffer(comicId, undefined, meta);
   if (!buffer) {
     return NextResponse.json({ error: "Could not load comic" }, { status: 404 });
   }

@@ -72,7 +72,7 @@ export async function saveProgress(
     percent: formatPercent(data.pageIndex + 1, data.totalPages),
     updatedAt: new Date().toISOString(),
     sourceRef: data.sourceRef,
-    coverUrl: data.coverUrl,
+    ...(data.coverUrl ? { coverUrl: data.coverUrl } : {}),
   };
 
   if (!isFirebaseConfigured()) {
@@ -126,8 +126,8 @@ export async function markCompleted(
     title: data.title,
     completedAt: new Date().toISOString(),
     lastPageIndex: data.lastPageIndex,
-    coverUrl: data.coverUrl,
     sourceRef: data.sourceRef,
+    ...(data.coverUrl ? { coverUrl: data.coverUrl } : {}),
   };
 
   if (!isFirebaseConfigured()) {
