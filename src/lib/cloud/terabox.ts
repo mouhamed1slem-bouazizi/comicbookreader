@@ -1,5 +1,5 @@
 import type { Comic, ComicFormat } from "@/types/comic";
-import { getAdminDb } from "@/lib/firebase/admin";
+import { getAdminDb, isFirebaseAdminConfigured } from "@/lib/firebase/admin";
 import { encryptToken, decryptToken } from "./encryption";
 
 export interface TeraboxCredentials {
@@ -642,23 +642,29 @@ export async function resolveTeraboxComic(
   uid: string
 ): Promise<Comic | null> {
   if (!comicId.startsWith("terabox-")) return null;
+  if (!isFirebaseAdminConfigured()) return null;
+
   const fsId = comicId.replace(/^terabox-/, "");
 
-  const db = getAdminDb();
-  const doc = await db
-    .collection("catalog")
-    .doc("comics")
-    .collection("items")
-    .doc(comicId)
-    .get();
-  if (doc.exists) return doc.data() as Comic;
+  try {
+    const doc = await getAdminDb()
+      .collection("catalog")
+      .doc("comics")
+      .collection("items")
+      .doc(comicId)
+      .get();
+    if (doc.exists) return doc.data() as Comic;
 
-  const creds = await getUserTeraboxCredentials(uid);
-  if (!creds) return null;
-  const files = await listTeraboxFiles(creds);
-  const file = files.find((f) => f.fs_id === fsId);
-  if (!file) return null;
-  return teraboxFileToComic(file, uid);
+    const creds = await getUserTeraboxCredentials(uid);
+    if (!creds) return null;
+    const files = await listTeraboxFiles(creds);
+    const file = files.find((f) => f.fs_id === fsId);
+    if (!file) return null;
+    return teraboxFileToComic(file, uid);
+  } catch (err) {
+    console.error("resolveTeraboxComic error:", err);
+    return null;
+  }
 }
 
 export async function indexTeraboxLibrary(

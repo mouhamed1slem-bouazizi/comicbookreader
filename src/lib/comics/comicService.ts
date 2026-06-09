@@ -27,11 +27,15 @@ export async function getComicMetadata(
   }
 
   if (comicId.startsWith("terabox-") && uid) {
-    const resolved = await resolveTeraboxComic(comicId, uid);
-    if (resolved) {
-      const cachedPages = pageCountCache.get(comicId);
-      if (cachedPages) resolved.totalPages = cachedPages;
-      return resolved;
+    try {
+      const resolved = await resolveTeraboxComic(comicId, uid);
+      if (resolved) {
+        const cachedPages = pageCountCache.get(comicId);
+        if (cachedPages) resolved.totalPages = cachedPages;
+        return resolved;
+      }
+    } catch (err) {
+      console.error("getComicMetadata terabox resolve error:", err);
     }
   }
 
@@ -63,26 +67,31 @@ export async function ensureComicPageCount(comic: Comic, uid?: string): Promise<
   const cached = pageCountCache.get(comic.id);
   if (cached) return cached;
 
-  const buffer = await getComicBuffer(comic.id, undefined, comic, uid);
-  if (!buffer) return 0;
+  try {
+    const buffer = await getComicBuffer(comic.id, undefined, comic, uid);
+    if (!buffer) return 0;
 
-  const pages = await listComicPages(buffer, comic.format);
-  pageCountCache.set(comic.id, pages.length);
+    const pages = await listComicPages(buffer, comic.format);
+    pageCountCache.set(comic.id, pages.length);
 
-  if (isFirebaseAdminConfigured() && pages.length > 0) {
-    try {
-      await getAdminDb()
-        .collection("catalog")
-        .doc("comics")
-        .collection("items")
-        .doc(comic.id)
-        .set({ totalPages: pages.length }, { merge: true });
-    } catch {
-      // non-fatal
+    if (isFirebaseAdminConfigured() && pages.length > 0) {
+      try {
+        await getAdminDb()
+          .collection("catalog")
+          .doc("comics")
+          .collection("items")
+          .doc(comic.id)
+          .set({ totalPages: pages.length }, { merge: true });
+      } catch {
+        // non-fatal
+      }
     }
-  }
 
-  return pages.length;
+    return pages.length;
+  } catch (err) {
+    console.error("ensureComicPageCount error:", err);
+    return 0;
+  }
 }
 
 export async function getComicBuffer(

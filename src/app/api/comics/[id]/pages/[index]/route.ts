@@ -34,8 +34,9 @@ export async function GET(
       );
     }
 
-    if (meta.totalPages === 0) {
-      await ensureComicPageCount(meta, uid ?? undefined);
+    let totalPages = meta.totalPages;
+    if (totalPages === 0) {
+      totalPages = await ensureComicPageCount(meta, uid ?? undefined);
     }
 
     const page = await extractComicPage(buffer, meta.format, pageIndex);
@@ -47,6 +48,7 @@ export async function GET(
       headers: {
         "Content-Type": page.mimeType,
         "Cache-Control": "public, max-age=86400",
+        "X-Comic-Total-Pages": String(totalPages > 0 ? totalPages : pageIndex + 1),
       },
     });
   } catch (err) {

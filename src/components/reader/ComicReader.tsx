@@ -143,6 +143,14 @@ export function ComicReader({
         return;
       }
 
+      const totalHeader = res.headers.get("X-Comic-Total-Pages");
+      if (totalHeader) {
+        const parsed = parseInt(totalHeader, 10);
+        if (!Number.isNaN(parsed) && parsed > 0) {
+          setResolvedTotalPages(parsed);
+        }
+      }
+
       const blob = await res.blob();
       if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
       const url = URL.createObjectURL(blob);

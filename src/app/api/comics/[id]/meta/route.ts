@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/firebase/admin";
-import { getComicMetadata, ensureComicPageCount } from "@/lib/comics/comicService";
+import { getComicMetadata } from "@/lib/comics/comicService";
+
+export const maxDuration = 30;
 
 export async function GET(
   request: NextRequest,
@@ -14,10 +16,7 @@ export async function GET(
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (comic.totalPages === 0) {
-      comic.totalPages = await ensureComicPageCount(comic, uid ?? undefined);
-    }
-
+    // Page count is resolved lazily when the first page loads (see pages API).
     return NextResponse.json(comic);
   } catch (err) {
     console.error("GET /api/comics/[id]/meta error:", err);
