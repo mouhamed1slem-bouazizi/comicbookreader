@@ -44,12 +44,36 @@ function toServiceAccount(parsed: ServiceAccountJson): ServiceAccount | null {
   };
 }
 
+function normalizePrivateKey(raw: string): string {
+  return raw.replace(/\\n/g, "\n").trim();
+}
+
+function parsePrivateKeyOnly(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("-----BEGIN PRIVATE KEY-----")) {
+    return normalizePrivateKey(trimmed);
+  }
+  return null;
+}
+
 export function parseServiceAccount(): ServiceAccount | null {
   const jsonEnv = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   if (jsonEnv) {
     const parsed = parseServiceAccountJson(jsonEnv);
     const account = parsed ? toServiceAccount(parsed) : null;
     if (account) return account;
+
+    // Common Render mistake: private key pasted into FIREBASE_SERVICE_ACCOUNT_JSON
+    const privateKeyFromJsonEnv = parsePrivateKeyOnly(jsonEnv);
+    const email = process.env.FIREBASE_CLIENT_EMAIL;
+    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+    if (privateKeyFromJsonEnv && email && projectId) {
+      return {
+        projectId,
+        privateKey: privateKeyFromJsonEnv,
+        clientEmail: email,
+      };
+    }
   }
 
   const path = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
@@ -64,7 +88,9 @@ export function parseServiceAccount(): ServiceAccount | null {
   }
 
   const email = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY
+    ? normalizePrivateKey(process.env.FIREBASE_PRIVATE_KEY)
+    : null;
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
 
   if (email && privateKey && projectId) {
@@ -140,5 +166,16 @@ export async function verifyIdToken(
 
 export function getAdminConfigError(): string | null {
   if (isFirebaseAdminConfigured()) return null;
-  return "Server Firebase Admin is not configured. Add FIREBASE_SERVICE_ACCOUNT_JSON (full JSON) or FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY in Render environment variables.";
+
+  const jsonEnv = process.env.FIREBASE_SERVICE_ACCOUNT_JSON?.trim();
+  if (jsonEnv?.startsWith("-----BEGIN PRIVATE KEY-----")) {
+    if (!process.env.FIREBASE_CLIENT_EMAIL) {
+      return "You pasted the private key into FIREBASE_SERVICE_ACCOUNT_JSON. Also set FIREBASE_CLIENT_EMAIL and NEXT_PUBLIC_FIREBASE_PROJECT_ID on Render.";
+    }
+    if (!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) {
+      return "Set NEXT_PUBLIC_FIREBASE_PROJECT_ID=comicbookreader-bcddb on Render (required with your current Firebase vars).";
+    }
+  }
+
+  return "Server Firebase Admin is not configured. On Render use either: (1) FIREBASE_SERVICE_ACCOUNT_JSON = full JSON file contents, OR (2) FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY + NEXT_PUBLIC_FIREBASE_PROJECT_ID. Do not paste only the private key unless FIREBASE_CLIENT_EMAIL is also set.";
 }
