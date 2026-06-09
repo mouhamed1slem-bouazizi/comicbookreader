@@ -9,6 +9,8 @@ import {
   saveCachedTranslation,
 } from "@/lib/translate/cache";
 
+export const maxDuration = 120;
+
 export async function POST(request: NextRequest) {
   const uid = await verifyIdToken(request.headers.get("authorization"));
   if (!uid) {
@@ -72,7 +74,9 @@ export async function POST(request: NextRequest) {
       version: 1,
     };
 
-    await saveCachedTranslation(translation);
+    await saveCachedTranslation(translation).catch((cacheErr) => {
+      console.error("Translation cache save failed:", cacheErr);
+    });
     return NextResponse.json({ regions, cached: false });
   } catch (err) {
     console.error("Translation error:", err);

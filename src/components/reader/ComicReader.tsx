@@ -39,6 +39,7 @@ function useTranslationPrefetch(
   getIdToken: () => Promise<string | null>
 ) {
   const cacheRef = useRef<Map<number, TranslationRegion[]>>(new Map());
+  const failedRef = useRef<Set<number>>(new Set());
   const [regions, setRegions] = useState<TranslationRegion[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -50,6 +51,8 @@ function useTranslationPrefetch(
         }
         return;
       }
+      if (failedRef.current.has(pageIndex)) return;
+
       const token = await getIdToken();
       if (!token) return;
 
@@ -62,14 +65,17 @@ function useTranslationPrefetch(
           },
           body: JSON.stringify({ comicId, pageIndex, targetLang }),
         });
-        if (!res.ok) return;
+        if (!res.ok) {
+          failedRef.current.add(pageIndex);
+          return;
+        }
         const data = (await res.json()) as { regions: TranslationRegion[] };
         cacheRef.current.set(pageIndex, data.regions);
         if (pageIndex === currentPage) {
           setRegions(data.regions);
         }
       } catch {
-        // silent fail for prefetch
+        failedRef.current.add(pageIndex);
       }
     },
     [comicId, currentPage, targetLang, getIdToken]
@@ -80,6 +86,7 @@ function useTranslationPrefetch(
       setRegions([]);
       return;
     }
+    failedRef.current.delete(currentPage);
     setLoading(true);
     void fetchTranslation(currentPage).finally(() => setLoading(false));
 
